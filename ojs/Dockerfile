@@ -16,6 +16,11 @@ RUN curl -L https://pkp.sfu.ca/ojs/download/ojs-3.3.0-15.tar.gz -o /tmp/ojs.tar.
     && tar -xzf /tmp/ojs.tar.gz -C /var/www/html --strip-components=1 \
     && rm /tmp/ojs.tar.gz
 
+# Buat folder untuk file upload OJS
+RUN mkdir -p /var/www/files \
+    && chown -R www-data:www-data /var/www/files \
+    && chmod -R 755 /var/www/files
+    
 # Set permission
 RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html

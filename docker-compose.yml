@@ -1,5 +1,3 @@
-version: '3.8'
-
 networks:
   ojs-network:
     driver: bridge
@@ -7,6 +5,7 @@ networks:
 volumes:
   mysql_data:
   ojs_data:
+  ojs_files:
 
 services:
 
@@ -51,6 +50,7 @@ services:
       OJS_DB_PASSWORD: ojspassword
     volumes:
       - ojs_data:/var/www/html/files
+      - ojs_files:/var/www/files
     networks:
       - ojs-network
 
@@ -84,7 +84,9 @@ services:
     image: ghcr.io/zaproxy/zaproxy:stable
     container_name: ojs-zap
     restart: unless-stopped
-    command: zap.sh -daemon -host 0.0.0.0 -port 8090 -config api.disablekey=true
+    command: zap.sh -daemon -host 0.0.0.0 -port 8090 -config api.disablekey=true -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config scanner.threadPerHost=2
+    mem_limit: 512m
+    cpus: "1.0"
     ports:
       - "8090:8090"
     networks:
@@ -99,7 +101,7 @@ services:
     entrypoint: ["tail", "-f", "/dev/null"]   # keep alive, dipanggil on-demand
     networks:
       - ojs-network
-       
+
   # ─────────────────────────────────────────
   # 6. PHPMYADMIN (DATABASE GUI)
   # ─────────────────────────────────────────

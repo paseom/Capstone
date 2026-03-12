@@ -1,40 +1,73 @@
 import os
-import requests
+import time
 import subprocess
-import json
-from zapv2 import ZAPv2
+import requests
 
 OJS_URL = os.getenv("OJS_TARGET_URL", "http://ojs:80")
 ZAP_HOST = os.getenv("ZAP_HOST", "zap")
 ZAP_PORT = os.getenv("ZAP_PORT", "8090")
+ZAP_BASE = f"http://{ZAP_HOST}:{ZAP_PORT}"
+
+
+def zap_get(path: str, params: dict = {}) -> dict:
+    url = f"{ZAP_BASE}{path}"
+    r = requests.get(url, params=params, timeout=30)
+    return r.json()
+
+
+def wait_for_zap(retries=20, delay=5):
+    for i in range(retries):
+        try:
+            data = zap_get("/JSON/core/view/version/")
+            if data.get("version"):
+                print(f"[ZAP] Ready! Version: {data['version']}")
+                return True
+        except Exception as e:
+            print(f"[ZAP] Not ready ({i+1}/{retries}): {e}")
+            time.sleep(delay)
+    return False
+
 
 def run_zap_scan() -> list[dict]:
     """
-    Trigger OWASP ZAP active scan terhadap OJS.
-    Return list of findings.
+    ZAP Spider + Passive Scan saja (ringan, tidak crash).
+    Active scan dinonaktifkan untuk prototype.
     """
     findings = []
     try:
-        zap = ZAPv2(proxies={"http": f"http://{ZAP_HOST}:{ZAP_PORT}"})
+        if not wait_for_zap():
+            raise Exception("ZAP tidak bisa diakses")
 
-        print(f"[ZAP] Starting scan on {OJS_URL}")
-        zap.urlopen(OJS_URL)
+        # Spider saja (passive scan otomatis jalan saat spider)
+        print(f"[ZAP] Starting spider on {OJS_URL}")
+        spider = zap_get("/JSON/spider/action/scan/", {"url": OJS_URL, "maxChildren": "10"})
+        spider_id = spider.get("scan", "0")
 
-        scan_id = zap.ascan.scan(OJS_URL)
-        print(f"[ZAP] Scan ID: {scan_id}")
-
-        # Tunggu sampai scan selesai
-        import time
-        while int(zap.ascan.status(scan_id)) < 100:
-            print(f"[ZAP] Progress: {zap.ascan.status(scan_id)}%")
+        while True:
+            status = zap_get("/JSON/spider/view/status/", {"scanId": spider_id})
+            pct = int(status.get("status", 0))
+            print(f"[ZAP] Spider: {pct}%")
+            if pct >= 100:
+                break
             time.sleep(5)
+        print("[ZAP] Spider done")
 
-        alerts = zap.core.alerts()
+        # Tunggu passive scan selesai
+        time.sleep(10)
+
+        # Ambil alerts dari passive scan
+        alerts_resp = zap_get("/JSON/core/view/alerts/", {
+            "baseurl": OJS_URL,
+            "start": "0",
+            "count": "100"
+        })
+        alerts = alerts_resp.get("alerts", [])
+
         for alert in alerts:
             findings.append({
                 "source": "zap",
                 "name": alert.get("name"),
-                "risk": alert.get("risk"),          # High / Medium / Low / Informational
+                "risk": alert.get("risk"),
                 "confidence": alert.get("confidence"),
                 "description": alert.get("description"),
                 "url": alert.get("url"),
@@ -51,39 +84,36 @@ def run_zap_scan() -> list[dict]:
 
 
 def run_nikto_scan() -> list[dict]:
-    """
-    Jalankan Nikto lewat Docker container yang sudah jalan.
-    Return list of findings.
-    """
     findings = []
     try:
         print(f"[Nikto] Starting scan on {OJS_URL}")
+
         result = subprocess.run(
             [
-                "docker", "exec", "ojs-nikto",
-                "nikto", "-h", OJS_URL, "-Format", "json", "-output", "/tmp/nikto_result.json"
+                "perl", "/opt/nikto/program/nikto.pl",
+                "-h", OJS_URL,
+                "-Format", "txt",
+                "-nointeractive",
+                "-Tuning", "1",   # hanya test file berbahaya (ringan)
             ],
             capture_output=True,
             text=True,
             timeout=300
         )
 
-        # Baca hasil JSON
-        read_result = subprocess.run(
-            ["docker", "exec", "ojs-nikto", "cat", "/tmp/nikto_result.json"],
-            capture_output=True, text=True
-        )
+        output = result.stdout + result.stderr
+        print(f"[Nikto] Output preview:\n{output[:800]}")
 
-        data = json.loads(read_result.stdout)
-        for item in data.get("vulnerabilities", []):
-            findings.append({
-                "source": "nikto",
-                "name": item.get("id"),
-                "risk": item.get("OSVDB", "Unknown"),
-                "description": item.get("msg"),
-                "url": item.get("url"),
-                "method": item.get("method"),
-            })
+        for line in output.splitlines():
+            line = line.strip()
+            if line.startswith("+") and len(line) > 5:
+                findings.append({
+                    "source": "nikto",
+                    "name": "Nikto Finding",
+                    "risk": "Medium",
+                    "description": line,
+                    "url": OJS_URL,
+                })
 
         print(f"[Nikto] Found {len(findings)} issues")
 

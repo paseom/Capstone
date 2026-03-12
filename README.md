@@ -44,7 +44,7 @@ Capstone/
 │   └── database.py          # Koneksi & operasi MySQL
 ├── ojs/
 │   └── Dockerfile           # Build container OJS
-└── dashboard/               # Frontend (coming soon)
+└── dashboard/
 ```
 
 ---
