@@ -26,6 +26,7 @@ docker compose up --build
 | Backend API    | http://localhost:8000      |
 | API Docs       | http://localhost:8000/docs |
 | ZAP API        | http://localhost:8090      |
+| phpMyAdmin     | http://localhost:8888      |
 
 ---
 
