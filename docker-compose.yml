@@ -1,0 +1,101 @@
+version: '3.8'
+
+networks:
+  ojs-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  ojs_data:
+
+services:
+
+  # ─────────────────────────────────────────
+  # 1. DATABASE
+  # ─────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: ojs-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ojs
+      MYSQL_USER: ojs
+      MYSQL_PASSWORD: ojspassword
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - ojs-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # 2. OJS (TARGET SCAN)
+  # ─────────────────────────────────────────
+  ojs:
+    build: ./ojs
+    container_name: ojs-app
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      OJS_DB_HOST: mysql
+      OJS_DB_NAME: ojs
+      OJS_DB_USER: ojs
+      OJS_DB_PASSWORD: ojspassword
+    volumes:
+      - ojs_data:/var/www/html/files
+    networks:
+      - ojs-network
+
+  # ─────────────────────────────────────────
+  # 3. BACKEND SCANNER (FastAPI)
+  # ─────────────────────────────────────────
+  backend:
+    build: ./backend
+    container_name: ojs-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_HOST: mysql
+      DB_NAME: ojs
+      DB_USER: ojs
+      DB_PASSWORD: ojspassword
+      OJS_TARGET_URL: http://ojs:80
+      ZAP_HOST: zap
+      ZAP_PORT: 8090
+    networks:
+      - ojs-network
+
+  # ─────────────────────────────────────────
+  # 4. OWASP ZAP (EXTERNAL SCANNER)
+  # ─────────────────────────────────────────
+  zap:
+    image: ghcr.io/zaproxy/zaproxy:stable
+    container_name: ojs-zap
+    restart: unless-stopped
+    command: zap.sh -daemon -host 0.0.0.0 -port 8090 -config api.disablekey=true
+    ports:
+      - "8090:8090"
+    networks:
+      - ojs-network
+
+  # ─────────────────────────────────────────
+  # 5. NIKTO (EXTERNAL SCANNER)
+  # ─────────────────────────────────────────
+  nikto:
+    image: frapsoft/nikto
+    container_name: ojs-nikto
+    entrypoint: ["tail", "-f", "/dev/null"]   # keep alive, dipanggil on-demand
+    networks:
+      - ojs-network
