@@ -99,3 +99,22 @@ services:
     entrypoint: ["tail", "-f", "/dev/null"]   # keep alive, dipanggil on-demand
     networks:
       - ojs-network
+       
+  # ─────────────────────────────────────────
+  # 6. PHPMYADMIN (DATABASE GUI)
+  # ─────────────────────────────────────────
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: ojs-phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "8888:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_USER: ojs
+      PMA_PASSWORD: ojspassword
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - ojs-network
