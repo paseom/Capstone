@@ -57,8 +57,3 @@ Capstone/
 | POST   | /scan/nikto   | Jalankan Nikto scan           |
 | POST   | /scan/all     | Jalankan semua scanner        |
 | GET    | /results      | Ambil semua hasil scan        |
-
----
-
-## 👥 Tim
-Capstone Project — [Nama Tim / Universitas]
